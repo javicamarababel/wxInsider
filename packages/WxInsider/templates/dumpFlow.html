@@ -1,0 +1,24 @@
+<html>
+<head>
+<title>Servicio: %value fullServiceName%</title>
+</head>
+<body>
+<h1>Servicio: %value fullServiceName%</h1>
+%ifvar error%
+<h2>Error volcando servicio</h2>
+<pre>
+%value error/mensajeError%
+</pre>
+<pre>
+%value error/descripcionError%
+</pre>
+%else%
+<h2>Entrada</h2>
+<pre>%value dumpInput%</pre>
+<h2>Salida</h2>
+<pre>%value dumpOutput%</pre>
+<h2>Implementación</h2>
+<pre>%value dumpImpl%</pre>
+%end if%
+</body>
+</html>

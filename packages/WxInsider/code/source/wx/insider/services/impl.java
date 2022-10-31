@@ -22,6 +22,7 @@ import com.wm.lang.flow.FlowMapCopy;
 import com.wm.lang.flow.FlowMapInvoke;
 import com.wm.lang.flow.FlowMap;
 import com.wm.lang.flow.FlowMapSet;
+import com.wm.lang.flow.MapWmPathInfo;
 // --- <<IS-END-IMPORTS>> ---
 
 public final class impl
@@ -62,7 +63,7 @@ public final class impl
 				throw new NullPointerException(fullServiceName+" no es un servicio Flow (class="+svcNode.getClass().getName());
 			FlowSvcImpl svc=(FlowSvcImpl)svcNode;
 			
-			DumpFormatText fmt=new DumpFormatText();
+			DumpFormat fmt=new DumpFormatHTML();
 			FlowDumper fd=new FlowDumper(fmt);
 			StringBuilder dumpInput=new StringBuilder()
 					, dumpOutput=new StringBuilder()
@@ -160,24 +161,29 @@ public final class impl
 		}
 		String dump(FlowElement fe, boolean omitFirstIndent) {
 			StringBuilder dump=new StringBuilder();
-			if (!omitFirstIndent)
-				insertIndent(dump);
-			String label=getLabel(fe);
-			if (label!=null) {
-				dump.append(label);
-				dump.append(": ");
+			if (fe instanceof FlowRoot) {
+				dumpChildren(dump,fe,false);
 			}
-			
-			if (fe instanceof FlowMapCopy)
-				dump.append(dump((FlowMapCopy)fe));
-			else if (fe instanceof FlowMapInvoke)
-				dump.append(dump((FlowMapInvoke)fe));
-	//			else if (fe instanceof FlowMap)
-	//				dump.append(dump((FlowMap)fe));
-			else if (fe instanceof FlowMapSet)
-				dump.append(dump((FlowMapSet)fe));
 			else {
-				defaultDump(dump,fe);
+				if (!omitFirstIndent)
+					insertIndent(dump);
+				String label=getLabel(fe);
+				if (label!=null) {
+					dump.append(label);
+					dump.append(": ");
+				}
+				
+				if (fe instanceof FlowMapCopy)
+					dump.append(dump((FlowMapCopy)fe));
+				else if (fe instanceof FlowMapInvoke)
+					dump.append(dump((FlowMapInvoke)fe));
+		//			else if (fe instanceof FlowMap)
+		//				dump.append(dump((FlowMap)fe));
+				else if (fe instanceof FlowMapSet)
+					dump.append(dump((FlowMapSet)fe));
+				else {
+					defaultDump(dump,fe);
+				}
 			}
 			return dump.toString();
 		}
@@ -186,18 +192,27 @@ public final class impl
 			dump.append(" (");
 			dump.append(fe.getClass().getName());
 			dump.append(")");
+			String cmt=fe.getComment();
+			if (cmt!=null && cmt.length()>0) {
+				dump.append(fmt.genComentario(cmt));
+			}
 			dumpChildren(dump,fe);
 		}
 		void dumpChildren(StringBuilder dump, FlowElement fe) {
+			dumpChildren(dump, fe, true);
+		}
+		void dumpChildren(StringBuilder dump, FlowElement fe,boolean doIndent) {
 			FlowElement[] children=fe.getNodes();
 			if (children!=null) {
-				++indent;
+				if (doIndent)
+					++indent;
 				for (FlowElement cfe:children) {
 					appendEol(dump);
 					String childDump=dump(cfe);
 					dump.append(childDump);
 				}
-				--indent;
+				if (doIndent)
+					--indent;
 			}
 		}
 		
@@ -212,15 +227,13 @@ public final class impl
 			return fmt.appendEol(dump);
 		}
 	
-		
 		String dump(FlowMapCopy fe) {
 			StringBuilder dump=new StringBuilder();
 			
 			dump.append(fe.toString());
-			dump.append(" from ");
-			dump.append(fe.getMapFrom());
-			dump.append(" to ");
-			dump.append(fe.getMapTo());
+			dump.append(" ");
+			dump.append(dumpMapSource(fe.getParsedFrom()));
+			dump.append(dumpMapTarget(fe.getParsedTo()));
 			
 			return dump.toString();
 		}
@@ -300,8 +313,8 @@ public final class impl
 			dump.append(fe.toString());
 			dump.append(" ");
 			dump.append(dumpValue(fe.getInput()));
-			dump.append(" -> ");
-			dump.append(fe.getField());
+			dump.append(dumpMapTarget(fe.getParsedPath()));
+	
 			return dump.toString();
 		}
 		String dumpValue(Object value) {
@@ -310,7 +323,8 @@ public final class impl
 				dump.append("(null value)");
 			else if (value instanceof IData) {
 				IData v=(IData)value;
-				dump.append("{ valor de documento:");
+				dump.append("{");
+				dump.append(fmt.genComentario("valor de documento:"));
 				++indent;
 				IDataCursor c=v.getCursor();
 				boolean more;
@@ -325,17 +339,33 @@ public final class impl
 				dump.append("}");
 			}
 			else {
-				dump.append("'");
-				dump.append(value.toString());
-				dump.append("'");
+				dump.append(fmt.genLiteral("'"+value+"'"));
 			}
 			return dump.toString();
 		}
+		String dumpMapSource(String name) {
+			StringBuilder dump=new StringBuilder();
+			dump.append(name);
+			return dump.toString();
+		}
+		String dumpMapSource(MapWmPathInfo path) {
+			return dumpMapSource(path.getPathDisplayString());
+		}
+		
+		String dumpMapTarget(MapWmPathInfo path) {
+			StringBuilder dump=new StringBuilder();
+			dump.append(" -> ");
+			dump.append(path.getPathDisplayString());
+			return dump.toString();
+		}
+		
 	} // class FlowDumper
 	
 	static abstract class DumpFormat {
 		abstract StringBuilder insertIndent(StringBuilder dump,boolean eol,int indent);
 		abstract StringBuilder appendEol(StringBuilder dump);
+		abstract String genComentario(String cmt);
+		abstract String genLiteral(String cmt);
 	} // class DumpFormat
 	
 	static class DumpFormatText extends DumpFormat {
@@ -351,7 +381,62 @@ public final class impl
 			dump.append('\n');
 			return dump;
 		}
+		String genComentario(String cmt) {
+			StringBuilder dump=new StringBuilder();
+			dump.append(" (");
+			dump.append(cmt);
+			dump.append(")");
+			return dump.toString();
+		}
+		String genLiteral(String cmt) {
+			return cmt;
+		}
 	} // class DumpFormatText 
+	
+	static class DumpFormatHTML extends DumpFormat {
+		String escape(String tx) {
+			StringBuilder etx=new StringBuilder();
+			int i,I;
+			for (i=0,I=tx.length();i<I;++i) {
+				char c=tx.charAt(i);
+				if (c=='<')
+					etx.append("&lt;");
+				else if (c=='>')
+					etx.append("&gt;");
+				else if (c=='&')
+					etx.append("&amp;");
+				else
+					etx.append(c);
+			}
+			return etx.toString();
+		}
+		StringBuilder insertIndent(StringBuilder dump,boolean eol,int indent) {
+			if (eol)
+				dump.append("<br/>");
+			for (int i=0;i<indent;++i) {
+				dump.append("&nbsp;&nbsp;");
+			}
+			return dump;
+		}
+		StringBuilder appendEol(StringBuilder dump) {
+			dump.append("<br/>");
+			return dump;
+		}
+		String genComentario(String cmt) {
+			StringBuilder dump=new StringBuilder();
+			dump.append(" // <i class='comentario'>");
+			dump.append(escape(cmt));
+			dump.append("</i>");
+			return dump.toString();
+		}
+		String genLiteral(String cmt) {
+			StringBuilder dump=new StringBuilder();
+			dump.append("<code>");
+			dump.append(escape(cmt));
+			dump.append("</code>");
+			return dump.toString();
+		}
+	} // class DumpFormatHTML
 	
 	static class DocMapGen {
 		
